@@ -24,6 +24,7 @@ use std::{fmt, fs, io, path::Path, sync::Arc};
 use log::{debug, info};
 
 use crate::{Database, DatabaseSource, DbHash};
+extern crate kvdb_nomtdb;
 use codec::Decode;
 use sp_database::Transaction;
 use sp_runtime::{
@@ -192,6 +193,8 @@ fn open_database_at<Block: BlockT>(
 ) -> OpenDbResult {
 	let db: Arc<dyn Database<DbHash>> = match &db_source {
 		DatabaseSource::ParityDb { path } => open_parity_db::<Block>(path, db_type, create)?,
+		DatabaseSource::NomtDb { path } =>
+			open_kvdb_nomtdb::<Block>(path, db_type, create)?,
 		#[cfg(feature = "rocksdb")]
 		DatabaseSource::RocksDb { path, cache_size } =>
 			open_kvdb_rocksdb::<Block>(path, db_type, create, *cache_size)?,
@@ -201,7 +204,7 @@ fn open_database_at<Block: BlockT>(
 			}
 			db.clone()
 		},
-		DatabaseSource::Auto { paritydb_path, rocksdb_path, cache_size } => {
+		DatabaseSource::Auto { paritydb_path, rocksdb_path, cache_size, .. } => {
 			// check if rocksdb exists first, if not, open paritydb
 			match open_kvdb_rocksdb::<Block>(rocksdb_path, db_type, false, *cache_size) {
 				Ok(db) => db,
@@ -352,6 +355,39 @@ fn open_kvdb_rocksdb<Block: BlockT>(
 ) -> OpenDbResult {
 	Err(OpenDbError::NotEnabled("with-kvdb-rocksdb"))
 }
+
+// #[cfg(any(feature = "nomtdb", test))]
+fn open_kvdb_nomtdb<Block: BlockT>(
+	path: &Path,
+	db_type: DatabaseType,
+	create: bool,
+) -> OpenDbResult {
+	// first upgrade database to required version
+	// match crate::upgrade::upgrade_db::<Block>(path, db_type) {
+	// 	// in case of missing version file, assume that database simply does not exist at given
+	// 	// location
+	// 	Ok(_) | Err(crate::upgrade::UpgradeError::MissingDatabaseVersionFile) => (),
+	// 	Err(err) => return Err(io::Error::new(io::ErrorKind::Other, err.to_string()).into()),
+	// }
+
+	// and now open database assuming that it has the latest version
+	// let mut db_config = kvdb_rocksdb::DatabaseConfig::with_columns(NUM_COLUMNS);
+	// db_config.create_if_missing = create;
+
+	let db = kvdb_nomtdb::NomtDB::default();
+	// write database version only after the database is successfully opened
+	// crate::upgrade::update_version(path)?;
+	Ok(sp_database::as_database(db))
+}
+
+// #[cfg(not(any(feature = "nomtdb", test)))]
+// fn open_kvdb_nomtdb<Block: BlockT>(
+// 	_path: &Path,
+// 	_db_type: DatabaseType,
+// 	_create: bool,
+// ) -> OpenDbResult {
+// 	Err(OpenDbError::NotEnabled("with-kvdb-rocksdb"))
+// }
 
 /// Check database type.
 pub fn check_database_type(
@@ -692,10 +728,12 @@ mod tests {
 		let db_path = db_dir.path().to_owned();
 		let paritydb_path = db_path.join("paritydb");
 		let rocksdb_path = db_path.join("rocksdb_path");
+		let nomtdb_path = db_path.join("nomtdb_path");
 		let source = DatabaseSource::Auto {
 			paritydb_path: paritydb_path.clone(),
 			rocksdb_path: rocksdb_path.clone(),
 			cache_size: 128,
+			nomtdb_path: nomtdb_path.clone(),
 		};
 
 		// it should create new auto (paritydb) database
@@ -738,6 +776,7 @@ mod tests {
 		let db_path = db_dir.path().to_owned();
 		let paritydb_path = db_path.join("paritydb");
 		let rocksdb_path = db_path.join("rocksdb_path");
+		let nomtdb_path = db_path.join("nomtdb_path");
 
 		let source = DatabaseSource::RocksDb { path: rocksdb_path.clone(), cache_size: 128 };
 
@@ -754,6 +793,7 @@ mod tests {
 					paritydb_path: paritydb_path.clone(),
 					rocksdb_path: rocksdb_path.clone(),
 					cache_size: 128,
+					nomtdb_path: nomtdb_path.clone(),
 				},
 				DatabaseType::Full,
 				true,
@@ -789,6 +829,7 @@ mod tests {
 		let db_path = db_dir.path().to_owned();
 		let paritydb_path = db_path.join("paritydb");
 		let rocksdb_path = db_path.join("rocksdb_path");
+		let nomtdb_path = db_path.join("nomtdb_path");
 
 		let source = DatabaseSource::ParityDb { path: paritydb_path.clone() };
 
@@ -817,7 +858,7 @@ mod tests {
 		// it should reopen existing auto (pairtydb) database
 		{
 			let db_res = open_database::<Block>(
-				&DatabaseSource::Auto { paritydb_path, rocksdb_path, cache_size: 128 },
+				&DatabaseSource::Auto { paritydb_path, rocksdb_path, cache_size: 128, nomtdb_path },
 				DatabaseType::Full,
 				true,
 			);

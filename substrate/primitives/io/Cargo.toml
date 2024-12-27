@@ -41,6 +41,11 @@ tracing-core = { workspace = true }
 
 # Required for backwards compatibility reason, but only used for verifying when `UseDalekExt` is set.
 ed25519-dalek = { optional = true, workspace = true }
+arrayfire = { git="https://github.com/arrayfire/arrayfire-rust", tag="v3.8.0", optional = true, default-features = false, features = [
+	"algorithm",
+	"random",
+	"arithmetic","indexing","data","graphics","image"
+]}
 
 docify = { workspace = true }
 
@@ -57,6 +62,7 @@ std = [
 	"codec/std",
 	"ed25519-dalek",
 	"ed25519-dalek?/std",
+	"arrayfire",
 	"libsecp256k1",
 	"log/std",
 	"secp256k1",

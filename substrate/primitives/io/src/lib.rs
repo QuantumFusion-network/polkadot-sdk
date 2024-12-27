@@ -179,9 +179,65 @@ impl From<MultiRemovalResults> for KillStorageResult {
 	}
 }
 
+#[cfg(feature = "std")]
+sp_externalities::decl_extension! {
+	pub struct UseAFExt;
+}
+
+#[cfg(feature = "std")]
+impl Default for UseAFExt {
+	fn default() -> Self {
+		Self
+	}
+}
+
 /// Interface for accessing the storage from within the runtime.
 #[runtime_interface]
 pub trait Storage {
+	
+	fn bench_cpu() -> u64 {
+		// sum from a to b
+		let mut s: u64 = 0;
+		// Source array with 1_000_000 capacity
+		let a: Vec<f32> = vec![1.0; 1_000_000];
+		// Empty array for result
+		let mut b: Vec<f32> = Vec::with_capacity(1_000_000);
+		for i in a {
+			// Divide a numbers
+			let d = i / i;
+			// Push result to array
+			b.push(d);
+		}
+		for i in b {
+			// Sum all results of div
+			s += i as u64;
+		}
+		s
+	}
+	
+	fn bench_gpu() -> u32 {
+		let mut c: u32 = 0;
+		if sp_externalities::with_externalities(|mut e| e.extension::<UseAFExt>().is_some())
+			.unwrap_or_default()
+		{
+			extern crate arrayfire as af;
+			use af::{Seq, Dim4};
+			use af::{print, randu, print_mem_info, get_available_backends, get_device};
+			af::set_backend(af::Backend::OPENCL);
+			// Array struct
+			let dim = Dim4::new(&[1_000_000, 1, 1, 1]);
+			// New array filled with float random numbers
+			let seq = randu::<u64>(dim);
+			// New array filled with float random numbers
+			let seq2 = randu::<u64>(dim);
+			// Div two arrays and get new array with result
+			let b = af::div(&seq, &seq2, false);
+			// Sum result array
+			let e = af::sum(&b, 0);
+		};
+		c
+	}
+
 	/// Returns the data for `key` in the storage or `None` if the key can not be found.
 	fn get(&mut self, key: &[u8]) -> Option<bytes::Bytes> {
 		self.storage(key).map(bytes::Bytes::from)
@@ -1830,6 +1886,8 @@ mod tests {
 	use super::*;
 	use sp_core::{crypto::UncheckedInto, map, storage::Storage};
 	use sp_state_machine::BasicExternalities;
+	use std::time::Instant;
+	use arrayfire::Array;
 
 	#[test]
 	fn storage_works() {
@@ -1943,6 +2001,106 @@ mod tests {
 		BasicExternalities::default().execute_with(|| {
 			assert!(crypto::ed25519_verify(&zero_ed_sig(), &Vec::new(), &zero_ed_pub()));
 		})
+	}
+
+	#[test]
+	fn use_cpu_loop() {
+		let mut c = 0;
+		for i in 0..1_500_000 {
+			c += i;
+		}
+		println!("Sum={}", c);
+	}
+
+	#[test]
+	fn use_af_win() {
+		let mut ext = BasicExternalities::default();
+		ext.register_extension(UseAFExt::default());
+
+		// With dalek the zero signature should fail to verify.
+		ext.execute_with(|| {
+			use arrayfire::{histogram, load_image, Window};
+			let mut wnd = Window::new(1280, 720, String::from("Image Histogram"));
+			let img = load_image::<f32>("/Users/max/Desktop/testimg.png".to_string(), true/*If color image, 'false' otherwise*/);
+			let hst = histogram(&img, 256, 0 as f64, 255 as f64);
+
+			loop {
+				wnd.grid(2, 1);
+
+				wnd.set_view(0, 0);
+				wnd.draw_image(&img, Some("Input Image".to_string()));
+
+				wnd.set_view(1, 0);
+				wnd.draw_hist(&hst, 0.0, 255.0, Some("Input Image Histogram".to_string()));
+
+				wnd.show();
+
+				if wnd.is_closed() == true { break; }
+			}
+		})
+	}
+
+	#[test]
+	fn use_af_info() {
+		let mut ext = BasicExternalities::default();
+		ext.register_extension(UseAFExt::default());
+
+		// With dalek the zero signature should fail to verify.
+		ext.execute_with(|| {
+			extern crate arrayfire as af;
+			af::set_backend(af::Backend::OPENCL);
+			use arrayfire::{Dim4, print, randu, print_mem_info, get_available_backends, get_device};
+			// let now = Instant::now();
+			let dims = Dim4::new(&[1_500_000, 1, 1, 1]);
+			let a = randu::<f32>(dims);
+			let backs = get_available_backends();
+			println!("Backs: {:#?}", backs);
+			// print(&a);
+			let dev_id = get_device();
+			print_mem_info("MEM: ".to_string(), dev_id);
+		});
+	}
+
+	#[test]
+	fn use_af_ext_works() {
+		let mut ext = BasicExternalities::default();
+		ext.register_extension(UseAFExt::default());
+
+		// With dalek the zero signature should fail to verify.
+		ext.execute_with(|| {
+			extern crate arrayfire as af;
+			af::set_backend(af::Backend::OPENCL);
+			use arrayfire::{Dim4, print, randu, sum, div};
+			let now = Instant::now();
+			let dims = Dim4::new(&[1_500_000, 1, 1, 1]);
+			let a = randu::<f64>(dims);
+			let b = randu::<f64>(dims);
+			let c = div(&a, &b, false);
+			let d = af::sum(&c, 0);
+			let el = now.elapsed();
+			print(&d);
+			println!("Sum {}", d.to_string());
+			println!("gpu time={:?}", el);
+			let now = Instant::now();
+			let mut cc: f64 = 0.0;
+			for i in 0..1_500_000 {
+				cc += f64::from(i) / 2.0;
+			}
+			let el = now.elapsed();
+			println!("cpu time={:?}", el);
+			println!("Sum={}", cc);
+			// let now = Instant::now();
+			// let b = sum(&a, 0);
+			// let el = now.elapsed();
+			// // print(&b);
+			// println!("b time={:?}", el);
+			// let now = Instant::now();
+			// let c = sum(&a, 1);
+			// let el = now.elapsed();
+			// // print(&c);
+			// println!("c time={:?}", el);
+			// assert!(!);
+		});
 	}
 
 	#[test]

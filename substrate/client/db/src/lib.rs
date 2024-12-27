@@ -343,6 +343,7 @@ pub enum DatabaseSource {
 		paritydb_path: PathBuf,
 		/// Path to the rocksdb database.
 		rocksdb_path: PathBuf,
+		nomtdb_path: PathBuf,
 		/// Cache size in MiB. Used only by `RocksDb` variant of `DatabaseSource`.
 		cache_size: usize,
 	},
@@ -357,6 +358,12 @@ pub enum DatabaseSource {
 
 	/// Load a ParityDb database from a given path.
 	ParityDb {
+		/// Path to the database.
+		path: PathBuf,
+	},
+
+	/// Load a ParityDb database from a given path.
+	NomtDb {
 		/// Path to the database.
 		path: PathBuf,
 	},
@@ -383,6 +390,7 @@ impl DatabaseSource {
 			#[cfg(feature = "rocksdb")]
 			DatabaseSource::RocksDb { path, .. } => Some(path),
 			DatabaseSource::ParityDb { path } => Some(path),
+			DatabaseSource::NomtDb { path } => Some(path),
 			DatabaseSource::Custom { .. } => None,
 		}
 	}
@@ -403,6 +411,10 @@ impl DatabaseSource {
 				*path = p.into();
 				true
 			},
+			DatabaseSource::NomtDb { ref mut path } => {
+				*path = p.into();
+				true
+			},
 			DatabaseSource::Custom { .. } => false,
 		}
 	}
@@ -415,6 +427,7 @@ impl std::fmt::Display for DatabaseSource {
 			#[cfg(feature = "rocksdb")]
 			DatabaseSource::RocksDb { .. } => "RocksDb",
 			DatabaseSource::ParityDb { .. } => "ParityDb",
+			DatabaseSource::NomtDb { .. } => "NomtDb",
 			DatabaseSource::Custom { .. } => "Custom",
 		};
 		write!(f, "{}", name)
