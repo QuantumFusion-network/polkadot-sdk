@@ -50,12 +50,16 @@ sp-tracing = { workspace = true, default-features = true }
 tracing-subscriber = { workspace = true }
 paste = { workspace = true, default-features = true }
 regex = { workspace = true }
-criterion = { workspace = true, default-features = true }
+criterion = { version = "0.5.1", features = ["html_reports"] }
 num_cpus = { workspace = true }
 tempfile = { workspace = true }
 
 [[bench]]
 name = "bench"
+harness = false
+
+[[bench]]
+name = "bench_gpu"
 harness = false
 
 [features]

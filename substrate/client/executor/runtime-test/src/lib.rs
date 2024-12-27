@@ -43,7 +43,7 @@ use sp_core::{ed25519, sr25519};
 use sp_io::{
 	crypto::{ed25519_verify, sr25519_verify},
 	hashing::{blake2_128, blake2_256, sha2_256, twox_128, twox_256},
-	storage, wasm_tracing,
+	storage, wasm_tracing, misc
 };
 #[cfg(not(feature = "std"))]
 use sp_runtime::{
@@ -77,6 +77,16 @@ static mut MUTABLE_STATIC: u64 = 32;
 static mut MUTABLE_STATIC_BSS: u64 = 0;
 
 sp_core::wasm_export_functions! {
+	fn test_loop_cpu() {
+        let t = storage::bench_cpu();
+        // misc::print_hex(&[t]);
+    }
+	
+    fn test_loop_gpu() {
+        let t = storage::bench_gpu();
+        // misc::print_hex(&[t]);
+    }
+
 	fn test_calling_missing_external() {
 		unsafe { missing_external() }
 	}
