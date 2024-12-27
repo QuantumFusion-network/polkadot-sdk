@@ -177,7 +177,7 @@ pub mod time_units {
 	use super::BlockNumber;
 
 	/// Milliseconds between Polkadot-like chain blocks.
-	pub const MILLISECS_PER_BLOCK: u64 = 6000;
+	pub const MILLISECS_PER_BLOCK: u64 = 1000;
 	/// Slot duration in Polkadot-like chain consensus algorithms.
 	pub const SLOT_DURATION: u64 = MILLISECS_PER_BLOCK;
 
