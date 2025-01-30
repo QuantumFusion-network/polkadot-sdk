@@ -1625,6 +1625,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1181e1e0d1fce796a03db1ae795d67167da795f9cf4a39c37589e85ef57f26d3"
 
 [[package]]
+name = "atomptr"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2a1529117e07828468cbe5a354bb0edd58b4d107117fa2f2ebfdd526ef06d144"
+
+[[package]]
 name = "attohttpc"
 version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5930,6 +5936,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "dashmap"
+version = "6.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5041cc499144891f3790297212f32a74fb938e5136a14943f338ef9e0ae276cf"
+dependencies = [
+ "cfg-if",
+ "crossbeam-utils",
+ "hashbrown 0.14.5",
+ "lock_api",
+ "once_cell",
+ "parking_lot_core 0.9.8",
+]
+
+[[package]]
 name = "data-encoding"
 version = "2.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8102,6 +8122,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "generic-array"
+version = "1.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e8c8444bc9d71b935156cc0ccab7f622180808af7867b1daae6547d773591703"
+dependencies = [
+ "typenum",
+]
+
+[[package]]
 name = "gethostname"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8283,7 +8312,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "821239e5672ff23e2a7060901fa622950bbd80b649cdaadd78d1c1767ed14eb4"
 dependencies = [
  "cfg-if",
- "dashmap",
+ "dashmap 5.5.1",
  "futures",
  "futures-timer",
  "no-std-compat",
@@ -8619,6 +8648,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "hpfile"
+version = "0.3.0"
+source = "git+https://github.com/andor0/qmdb?branch=polkadot-sdk-integration#c0e97c1b678b910c7cd76c30d475299b9d5f09b9"
+dependencies = [
+ "anyhow",
+ "dashmap 6.1.0",
+ "libc",
+ "parking_lot 0.12.3",
+]
+
+[[package]]
 name = "http"
 version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8715,7 +8755,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.4.9",
+ "socket2 0.5.7",
  "tokio",
  "tower-service",
  "tracing",
@@ -16417,7 +16457,7 @@ checksum = "4e69bf016dc406eff7d53a7d3f7cf1c2e72c82b9088aac1118591e36dd2cd3e9"
 dependencies = [
  "bitcoin_hashes 0.13.0",
  "rand",
- "rand_core 0.5.1",
+ "rand_core 0.6.4",
  "serde",
  "unicode-normalization",
 ]
@@ -20670,7 +20710,7 @@ checksum = "f8650aabb6c35b860610e9cff5dc1af886c9e25073b7b1712a68972af4281302"
 dependencies = [
  "bytes",
  "heck 0.5.0",
- "itertools 0.12.1",
+ "itertools 0.13.0",
  "log",
  "multimap",
  "once_cell",
@@ -20716,7 +20756,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "acf0c195eebb4af52c752bec4f52f645da98b6e92077a04110c7f349477ae5ac"
 dependencies = [
  "anyhow",
- "itertools 0.12.1",
+ "itertools 0.13.0",
  "proc-macro2 1.0.86",
  "quote 1.0.37",
  "syn 2.0.87",
@@ -20768,6 +20808,36 @@ dependencies = [
  "pprof",
  "pyroscope",
  "thiserror",
+]
+
+[[package]]
+name = "qmdb"
+version = "0.2.0"
+source = "git+https://github.com/andor0/qmdb?branch=polkadot-sdk-integration#c0e97c1b678b910c7cd76c30d475299b9d5f09b9"
+dependencies = [
+ "aead",
+ "aes-gcm",
+ "anyhow",
+ "atomptr",
+ "bincode",
+ "blake2 0.10.6",
+ "byteorder",
+ "dashmap 6.1.0",
+ "generic-array 1.2.0",
+ "hex",
+ "hpfile",
+ "lazy_static",
+ "log",
+ "parking_lot 0.12.3",
+ "rand_core 0.6.4",
+ "rayon",
+ "rs_merkle",
+ "serde",
+ "sha2 0.10.8",
+ "threadpool",
+ "tikv-jemallocator",
+ "time",
+ "xxhash-rust",
 ]
 
 [[package]]
@@ -21731,6 +21801,15 @@ dependencies = [
  "libc",
  "rtoolbox",
  "winapi",
+]
+
+[[package]]
+name = "rs_merkle"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b241d2e59b74ef9e98d94c78c47623d04c8392abaf82014dfd372a16041128f"
+dependencies = [
+ "sha2 0.10.8",
 ]
 
 [[package]]
@@ -24453,6 +24532,16 @@ dependencies = [
  "cfg-if",
  "cpufeatures",
  "digest 0.10.7",
+ "sha2-asm",
+]
+
+[[package]]
+name = "sha2-asm"
+version = "0.6.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b845214d6175804686b2bd482bcffe96651bb2d1200742b712003504a2dac1ab"
+dependencies = [
+ "cc",
 ]
 
 [[package]]
@@ -27649,6 +27738,7 @@ dependencies = [
  "nohash-hasher",
  "parity-scale-codec",
  "parking_lot 0.12.3",
+ "qmdb",
  "rand",
  "scale-info",
  "schnellru",
@@ -30336,9 +30426,9 @@ dependencies = [
 
 [[package]]
 name = "typenum"
-version = "1.16.0"
+version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "497961ef93d974e23eb6f433eb5fe1b7930b659f06d12dec6fc44a8f554c0bba"
+checksum = "42ff0bf0c66b8238c6f3b578df37d0b7848e55df8577b3f74f92a69acceeb825"
 
 [[package]]
 name = "ucd-trie"
@@ -32078,6 +32168,12 @@ checksum = "d7d8a75eaf6557bb84a65ace8609883db44a29951042ada9b393151532e41fcb"
 dependencies = [
  "xml-rs",
 ]
+
+[[package]]
+name = "xxhash-rust"
+version = "0.8.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdd20c5420375476fbd4394763288da7eb0cc0b8c11deed431a91562af7335d3"
 
 [[package]]
 name = "yamux"
