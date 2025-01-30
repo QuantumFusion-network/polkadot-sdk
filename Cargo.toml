@@ -1111,6 +1111,7 @@ prost = { version = "0.12.4" }
 prost-build = { version = "0.13.2" }
 pyroscope = { version = "0.5.7" }
 pyroscope_pprofrs = { version = "0.2.7" }
+qmdb = { git = "https://github.com/andor0/qmdb", branch = "polkadot-sdk-integration" }
 quick_cache = { version = "0.3" }
 quickcheck = { version = "1.0.3", default-features = false }
 quote = { version = "1.0.37" }
