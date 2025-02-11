@@ -314,4 +314,7 @@ impl pallet_collator_selection::Config for Runtime {
 impl pallet_parachain_template::Config for Runtime {
 	type RuntimeEvent = RuntimeEvent;
 	type WeightInfo = pallet_parachain_template::weights::SubstrateWeight<Runtime>;
+
+	type TimeoutBlocks = ConstU32<4>;
+	type CoolDownPeriodBlocks = ConstU32<5>;
 }

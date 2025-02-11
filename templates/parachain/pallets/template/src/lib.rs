@@ -49,6 +49,8 @@
 
 pub use pallet::*;
 
+const LOG_TARGET: &str = "runtime::template";
+
 #[cfg(test)]
 mod mock;
 
@@ -77,49 +79,126 @@ pub mod pallet {
 
 		/// A type representing the weights required by the dispatchables of this pallet.
 		type WeightInfo: crate::weights::WeightInfo;
+
+		#[pallet::constant]
+		type TimeoutBlocks: Get<u32>; // BlockNumberFor<T>
+
+		#[pallet::constant]
+		type CoolDownPeriodBlocks: Get<u32>; // BlockNumberFor<T>
 	}
 
 	#[pallet::pallet]
 	pub struct Pallet<T>(_);
 
-	/// A struct to store a single block-number. Has all the right derives to store it in storage.
-	/// <https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/reference_docs/frame_storage_derives/index.html>
 	#[derive(
 		Encode, Decode, MaxEncodedLen, TypeInfo, CloneNoBound, PartialEqNoBound, DefaultNoBound,
 	)]
 	#[scale_info(skip_type_params(T))]
-	pub struct CompositeStruct<T: Config> {
-		/// A block number.
-		pub(crate) block_number: BlockNumberFor<T>,
+	pub enum SlowchainState<T: Config> {
+		#[default]
+		Operational {
+			last_alive_message_block_number: BlockNumberFor<T>,
+		},
+		CoolDown {
+			start_block_number: BlockNumberFor<T>,
+		},
+		SlowMode {
+			start_block_number: BlockNumberFor<T>,
+		},
 	}
 
-	/// The pallet's storage items.
-	/// <https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/guides/your_first_pallet/index.html#storage>
-	/// <https://paritytech.github.io/polkadot-sdk/master/frame_support/pallet_macros/attr.storage.html>
 	#[pallet::storage]
-	pub type Something<T: Config> = StorageValue<_, CompositeStruct<T>>;
+	pub type State<T: Config> = StorageValue<_, SlowchainState<T>, ValueQuery>;
+
+	#[pallet::storage]
+	pub type ValidatorSet<T: Config> =
+		StorageMap<_, Blake2_128Concat, T::AccountId, (), ValueQuery>;
 
 	/// Pallets use events to inform users when important changes are made.
 	/// <https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/guides/your_first_pallet/index.html#event-and-error>
 	#[pallet::event]
 	#[pallet::generate_deposit(pub(super) fn deposit_event)]
 	pub enum Event<T: Config> {
-		/// We usually use passive tense for events.
-		SomethingStored { block_number: BlockNumberFor<T>, who: T::AccountId },
+		Heartbeat {
+			block_number: BlockNumberFor<T>,
+			who: T::AccountId,
+		},
+		StartedCoolDown {
+			block_number: BlockNumberFor<T>,
+			last_alive_message_block_number: BlockNumberFor<T>,
+		},
+		FinishedCoolDown {
+			block_number: BlockNumberFor<T>,
+		},
 	}
 
 	/// Errors inform users that something went wrong.
 	/// <https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/guides/your_first_pallet/index.html#event-and-error>
 	#[pallet::error]
 	pub enum Error<T> {
-		/// Error names should be descriptive.
-		NoneValue,
-		/// Errors should have helpful documentation associated with them.
-		StorageOverflow,
+		BlockTimeout,
+		CoolDownPeriod,
 	}
 
 	#[pallet::hooks]
-	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {}
+	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
+		fn on_initialize(bn: BlockNumberFor<T>) -> Weight {
+			let current_block_number = bn;
+			let current_block_number_: U256 = current_block_number.into();
+			log::info!(
+				target: crate::LOG_TARGET,
+				"on_initialize called, block {}", current_block_number_
+			);
+
+			match <State<T>>::get() {
+				SlowchainState::Operational { last_alive_message_block_number } => {
+					let last_alive_message_block_number_bn: U256 =
+						last_alive_message_block_number.into();
+					let timeout_blocks: U256 = T::TimeoutBlocks::get().into();
+
+					let deadline_block_number: BlockNumberFor<T> =
+						match (last_alive_message_block_number_bn + timeout_blocks).try_into() {
+							Ok(n) => n,
+							Err(_e) => panic!(), // handle
+						};
+
+					if current_block_number > deadline_block_number {
+						log::info!(
+							target: crate::LOG_TARGET,
+							"on_initialize: alive message deadline exceeded. Starting cool down"
+						);
+						<State<T>>::put(SlowchainState::CoolDown {
+							start_block_number: current_block_number,
+						});
+						Self::deposit_event(Event::StartedCoolDown {
+							block_number: current_block_number,
+							last_alive_message_block_number,
+						});
+					}
+				},
+				SlowchainState::CoolDown { start_block_number } => {
+					let start_block_number: U256 = start_block_number.into();
+					let cool_down_period_blocks: U256 = T::CoolDownPeriodBlocks::get().into();
+					let cool_down_period_deadline_block_number: BlockNumberFor<T> =
+						match (start_block_number + cool_down_period_blocks).try_into() {
+							Ok(n) => n,
+							Err(_e) => panic!(),
+						};
+					if current_block_number > cool_down_period_deadline_block_number {
+						<State<T>>::put(SlowchainState::Operational {
+							last_alive_message_block_number: current_block_number,
+						});
+						Self::deposit_event(Event::FinishedCoolDown {
+							block_number: current_block_number,
+						});
+					}
+				},
+				_ => (),
+			}
+
+			Weight::zero() // count storage weight
+		}
+	}
 
 	/// Dispatchable functions allows users to interact with the pallet and invoke state changes.
 	/// These functions materialize as "extrinsics", which are often compared to transactions.
@@ -127,56 +206,48 @@ pub mod pallet {
 	/// <https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/guides/your_first_pallet/index.html#dispatchables>
 	#[pallet::call]
 	impl<T: Config> Pallet<T> {
-		/// An example dispatchable that takes a singles value as a parameter, writes the value to
-		/// storage and emits an event. This function must be dispatched by a signed extrinsic.
 		#[pallet::call_index(0)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().writes(1))]
-		pub fn do_something(origin: OriginFor<T>, bn: u32) -> DispatchResultWithPostInfo {
-			// Check that the extrinsic was signed and get the signer.
-			// This function will return an error if the extrinsic is not signed.
-			// <https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/reference_docs/frame_origin/index.html>
+		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().reads_writes(1,1))]
+		pub fn handle_alive_message(origin: OriginFor<T>) -> DispatchResultWithPostInfo {
 			let who = ensure_signed(origin)?;
 
-			// Convert the u32 into a block number. This is possible because the set of trait bounds
-			// defined in [`frame_system::Config::BlockNumber`].
-			let block_number: BlockNumberFor<T> = bn.into();
+			let current_block_number = frame_system::Pallet::<T>::block_number();
 
-			// Update storage.
-			<Something<T>>::put(CompositeStruct { block_number });
-
-			// Emit an event.
-			Self::deposit_event(Event::SomethingStored { block_number, who });
-
-			// Return a successful [`DispatchResultWithPostInfo`] or [`DispatchResult`].
-			Ok(().into())
-		}
-
-		/// An example dispatchable that may throw a custom error.
-		#[pallet::call_index(1)]
-		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().reads_writes(1,1))]
-		pub fn cause_error(origin: OriginFor<T>) -> DispatchResultWithPostInfo {
-			let _who = ensure_signed(origin)?;
-
-			// Read a value from storage.
-			match <Something<T>>::get() {
-				// Return an error if the value has not been set.
-				None => Err(Error::<T>::NoneValue)?,
-				Some(mut old) => {
-					// Increment the value read from storage; will error in the event of overflow.
-					old.block_number = old
-						.block_number
-						.checked_add(&One::one())
-						// ^^ equivalent is to:
-						// .checked_add(&1u32.into())
-						// both of which build a `One` instance for the type `BlockNumber`.
-						.ok_or(Error::<T>::StorageOverflow)?;
-					// Update the value in storage with the incremented result.
-					<Something<T>>::put(old);
-					// Explore how you can rewrite this using
-					// [`frame_support::storage::StorageValue::mutate`].
-					Ok(().into())
+			match <State<T>>::get() {
+				SlowchainState::Operational { last_alive_message_block_number } => {
+					// i'm online pallet
+					ensure!(current_block_number > last_alive_message_block_number, "BlockNumberDecreased"); // '>=' ?
+					<State<T>>::put(SlowchainState::Operational {
+						last_alive_message_block_number: current_block_number,
+					});
+					Self::deposit_event(Event::Heartbeat {
+						block_number: current_block_number,
+						who,
+					});
 				},
+				SlowchainState::CoolDown { start_block_number } => {
+					let start_block_number: U256 = start_block_number.into();
+					let cool_down_period_blocks: U256 = T::CoolDownPeriodBlocks::get().into();
+					let cool_down_period_deadline_block_number: BlockNumberFor<T> =
+						match (start_block_number + cool_down_period_blocks).try_into() {
+							Ok(n) => n,
+							Err(_e) => panic!(),
+						};
+					if current_block_number > cool_down_period_deadline_block_number {
+						<State<T>>::put(SlowchainState::Operational {
+							last_alive_message_block_number: current_block_number,
+						});
+						Self::deposit_event(Event::FinishedCoolDown {
+							block_number: current_block_number,
+						});
+					} else {
+						return Err(Error::<T>::CoolDownPeriod.into());
+					}
+				},
+				SlowchainState::SlowMode { start_block_number: _ } => unimplemented!("SlowMode"),
 			}
+
+			Ok(().into())
 		}
 	}
 }
