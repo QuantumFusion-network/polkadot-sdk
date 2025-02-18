@@ -48,6 +48,7 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 pub use pallet::*;
+pub use polkadot_parachain_primitives::primitives::HeadData;
 
 const LOG_TARGET: &str = "runtime::template";
 
@@ -70,7 +71,42 @@ mod benchmarking;
 // <https://paritytech.github.io/polkadot-sdk/master/frame_support/pallet_macros/index.html>
 #[frame::pallet]
 pub mod pallet {
-	use frame::prelude::*;
+	use frame::{prelude::*, runtime::types_common::BlockNumber};
+
+	#[derive(PartialEq, Eq, Clone, Encode, Decode, TypeInfo, RuntimeDebug)]
+	#[cfg_attr(feature = "std", derive(Default))]
+	pub struct PersistedValidationData<H = H256, N = BlockNumber> {
+		/// The parent head-data.
+		pub parent_head: HeadData,
+		/// The relay-chain block number this is in the context of.
+		pub relay_parent_number: N,
+		/// The relay-chain block storage root this is in the context of.
+		pub relay_parent_storage_root: H,
+		/// The maximum legal size of a POV block, in bytes.
+		pub max_pov_size: u32,
+	}
+
+	/// The inherent data that is passed by the collator to the parachain runtime.
+	#[derive(Encode, Decode, RuntimeDebug, Clone, PartialEq, TypeInfo)]
+	pub struct AliveMessageProof {
+		pub validation_data: PersistedValidationData,
+		/// A storage proof of a predefined set of keys from the relay-chain.
+		///
+		/// Specifically this witness contains the data for:
+		///
+		/// - the current slot number at the given relay parent
+		/// - active host configuration as per the relay parent,
+		/// - the relay dispatch queue sizes
+		/// - the list of egress HRMP channels (in the list of recipients form)
+		/// - the metadata for the egress HRMP channels
+		pub relay_chain_state: sp_trie::StorageProof,
+		/// Downward messages in the order they were sent.
+		pub downward_messages: Vec<InboundDownwardMessage>,
+		/// HRMP messages grouped by channels. The messages in the inner vec must be in order they
+		/// were sent. In combination with the rule of no more than one message in a channel per block,
+		/// this means `sent_at` is **strictly** greater than the previous one (if any).
+		pub horizontal_messages: BTreeMap<ParaId, Vec<InboundHrmpMessage>>,
+	}
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
 	#[pallet::config]
@@ -81,10 +117,12 @@ pub mod pallet {
 		type WeightInfo: crate::weights::WeightInfo;
 
 		#[pallet::constant]
-		type TimeoutBlocks: Get<u32>; // BlockNumberFor<T>
+		type TimeoutBlocks: Get<BlockNumber>;
 
 		#[pallet::constant]
-		type CoolDownPeriodBlocks: Get<u32>; // BlockNumberFor<T>
+		type CoolDownPeriodBlocks: Get<BlockNumber>;
+
+		type AliveMessageProof = ParachainInherentData;
 	}
 
 	#[pallet::pallet]
@@ -136,31 +174,27 @@ pub mod pallet {
 	/// <https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/guides/your_first_pallet/index.html#event-and-error>
 	#[pallet::error]
 	pub enum Error<T> {
+		IntegerOverflow,
 		BlockTimeout,
 		CoolDownPeriod,
+		Unimplemented,
 	}
 
 	#[pallet::hooks]
 	impl<T: Config> Hooks<BlockNumberFor<T>> for Pallet<T> {
-		fn on_initialize(bn: BlockNumberFor<T>) -> Weight {
-			let current_block_number = bn;
-			let current_block_number_: U256 = current_block_number.into();
-			log::info!(
-				target: crate::LOG_TARGET,
-				"on_initialize called, block {}", current_block_number_
-			);
+		fn on_initialize(current_block_number: BlockNumberFor<T>) -> Weight {
+			let weight = Weight::zero();
 
 			match <State<T>>::get() {
 				SlowchainState::Operational { last_alive_message_block_number } => {
-					let last_alive_message_block_number_bn: U256 =
-						last_alive_message_block_number.into();
-					let timeout_blocks: U256 = T::TimeoutBlocks::get().into();
+					let timeout_blocks: BlockNumberFor<T> = T::TimeoutBlocks::get().into();
 
-					let deadline_block_number: BlockNumberFor<T> =
-						match (last_alive_message_block_number_bn + timeout_blocks).try_into() {
-							Ok(n) => n,
-							Err(_e) => panic!(), // handle
-						};
+					let deadline_block_number: Option<BlockNumberFor<T>> =
+						last_alive_message_block_number.checked_add(&timeout_blocks);
+					let deadline_block_number = match deadline_block_number {
+						Some(deadline_block_number) => deadline_block_number,
+						None => return weight,
+					};
 
 					if current_block_number > deadline_block_number {
 						log::info!(
@@ -177,14 +211,15 @@ pub mod pallet {
 					}
 				},
 				SlowchainState::CoolDown { start_block_number } => {
-					let start_block_number: U256 = start_block_number.into();
-					let cool_down_period_blocks: U256 = T::CoolDownPeriodBlocks::get().into();
-					let cool_down_period_deadline_block_number: BlockNumberFor<T> =
-						match (start_block_number + cool_down_period_blocks).try_into() {
-							Ok(n) => n,
-							Err(_e) => panic!(),
-						};
-					if current_block_number > cool_down_period_deadline_block_number {
+					let cool_down_period_blocks: BlockNumberFor<T> =
+						T::CoolDownPeriodBlocks::get().into();
+					let cool_down_period_deadline: Option<BlockNumberFor<T>> =
+						start_block_number.checked_add(&cool_down_period_blocks);
+					let cool_down_period_deadline = match cool_down_period_deadline {
+						Some(cool_down_period_deadline) => cool_down_period_deadline,
+						None => return weight,
+					};
+					if current_block_number > cool_down_period_deadline {
 						<State<T>>::put(SlowchainState::Operational {
 							last_alive_message_block_number: current_block_number,
 						});
@@ -196,7 +231,7 @@ pub mod pallet {
 				_ => (),
 			}
 
-			Weight::zero() // count storage weight
+			weight // TODO
 		}
 	}
 
@@ -216,7 +251,10 @@ pub mod pallet {
 			match <State<T>>::get() {
 				SlowchainState::Operational { last_alive_message_block_number } => {
 					// i'm online pallet
-					ensure!(current_block_number > last_alive_message_block_number, "BlockNumberDecreased"); // '>=' ?
+					ensure!(
+						current_block_number > last_alive_message_block_number,
+						"BlockNumberDecreased"
+					); // '>=' ?
 					<State<T>>::put(SlowchainState::Operational {
 						last_alive_message_block_number: current_block_number,
 					});
@@ -226,13 +264,13 @@ pub mod pallet {
 					});
 				},
 				SlowchainState::CoolDown { start_block_number } => {
-					let start_block_number: U256 = start_block_number.into();
-					let cool_down_period_blocks: U256 = T::CoolDownPeriodBlocks::get().into();
+					let cool_down_period_blocks: BlockNumberFor<T> =
+						T::CoolDownPeriodBlocks::get().into();
 					let cool_down_period_deadline_block_number: BlockNumberFor<T> =
-						match (start_block_number + cool_down_period_blocks).try_into() {
-							Ok(n) => n,
-							Err(_e) => panic!(),
-						};
+						start_block_number
+							.checked_add(&cool_down_period_blocks)
+							.ok_or(Error::<T>::IntegerOverflow)?;
+
 					if current_block_number > cool_down_period_deadline_block_number {
 						<State<T>>::put(SlowchainState::Operational {
 							last_alive_message_block_number: current_block_number,
@@ -244,7 +282,9 @@ pub mod pallet {
 						return Err(Error::<T>::CoolDownPeriod.into());
 					}
 				},
-				SlowchainState::SlowMode { start_block_number: _ } => unimplemented!("SlowMode"),
+				SlowchainState::SlowMode { start_block_number: _ } => {
+					return Err(Error::<T>::Unimplemented.into());
+				},
 			}
 
 			Ok(().into())
