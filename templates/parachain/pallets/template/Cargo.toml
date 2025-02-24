@@ -17,6 +17,9 @@ codec = { features = ["derive"], workspace = true }
 scale-info = { features = ["derive"], workspace = true }
 frame = { workspace = true, features = ["experimental", "runtime"], default-features = false }
 log = { workspace = true }
+polkadot-parachain-primitives = { workspace = true }
+sp-trie = { workspace = true }
+sp-consensus-grandpa = { workspace = true }
 
 [features]
 default = ["std"]

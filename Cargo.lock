@@ -12291,8 +12291,11 @@ version = "0.1.0"
 dependencies = [
  "log",
  "parity-scale-codec",
+ "polkadot-parachain-primitives",
  "polkadot-sdk-frame",
  "scale-info",
+ "sp-consensus-grandpa",
+ "sp-trie 38.0.0",
 ]
 
 [[package]]

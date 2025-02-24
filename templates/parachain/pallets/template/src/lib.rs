@@ -48,7 +48,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 pub use pallet::*;
-pub use polkadot_parachain_primitives::primitives::HeadData;
 
 const LOG_TARGET: &str = "runtime::template";
 
@@ -72,9 +71,10 @@ mod benchmarking;
 #[frame::pallet]
 pub mod pallet {
 	use frame::{prelude::*, runtime::types_common::BlockNumber};
+	use polkadot_parachain_primitives::primitives::HeadData;
+	use sp_consensus_grandpa::GrandpaJustification;
 
 	#[derive(PartialEq, Eq, Clone, Encode, Decode, TypeInfo, RuntimeDebug)]
-	#[cfg_attr(feature = "std", derive(Default))]
 	pub struct PersistedValidationData<H = H256, N = BlockNumber> {
 		/// The parent head-data.
 		pub parent_head: HeadData,
@@ -88,7 +88,7 @@ pub mod pallet {
 
 	/// The inherent data that is passed by the collator to the parachain runtime.
 	#[derive(Encode, Decode, RuntimeDebug, Clone, PartialEq, TypeInfo)]
-	pub struct AliveMessageProof {
+	pub struct ParachainInherentData {
 		pub validation_data: PersistedValidationData,
 		/// A storage proof of a predefined set of keys from the relay-chain.
 		///
@@ -100,12 +100,18 @@ pub mod pallet {
 		/// - the list of egress HRMP channels (in the list of recipients form)
 		/// - the metadata for the egress HRMP channels
 		pub relay_chain_state: sp_trie::StorageProof,
-		/// Downward messages in the order they were sent.
-		pub downward_messages: Vec<InboundDownwardMessage>,
-		/// HRMP messages grouped by channels. The messages in the inner vec must be in order they
-		/// were sent. In combination with the rule of no more than one message in a channel per block,
-		/// this means `sent_at` is **strictly** greater than the previous one (if any).
-		pub horizontal_messages: BTreeMap<ParaId, Vec<InboundHrmpMessage>>,
+		// /// Downward messages in the order they were sent.
+		// pub downward_messages: Vec<InboundDownwardMessage>,
+		// /// HRMP messages grouped by channels. The messages in the inner vec must be in order they
+		// /// were sent. In combination with the rule of no more than one message in a channel per block,
+		// /// this means `sent_at` is **strictly** greater than the previous one (if any).
+		// pub horizontal_messages: BTreeMap<ParaId, Vec<InboundHrmpMessage>>,
+	}
+
+	#[derive(Encode, Decode, RuntimeDebug, Clone, PartialEq, TypeInfo)]
+	pub struct AliveMessageProof<T: Config> {
+		pub parachain_inherent_data: ParachainInherentData,
+		pub grandpa_justification: GrandpaJustification<HeaderFor<T>>,
 	}
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
@@ -121,8 +127,6 @@ pub mod pallet {
 
 		#[pallet::constant]
 		type CoolDownPeriodBlocks: Get<BlockNumber>;
-
-		type AliveMessageProof = ParachainInherentData;
 	}
 
 	#[pallet::pallet]
@@ -243,8 +247,10 @@ pub mod pallet {
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
 		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().reads_writes(1,1))]
-		pub fn handle_alive_message(origin: OriginFor<T>) -> DispatchResultWithPostInfo {
+		pub fn handle_alive_message(origin: OriginFor<T>, proof: AliveMessageProof<T>) -> DispatchResultWithPostInfo {
 			let who = ensure_signed(origin)?;
+
+			// proof.validate(); // call in test -> bs16 scale encoded
 
 			let current_block_number = frame_system::Pallet::<T>::block_number();
 
