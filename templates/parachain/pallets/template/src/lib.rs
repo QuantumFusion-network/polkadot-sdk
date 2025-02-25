@@ -70,9 +70,9 @@ mod benchmarking;
 // <https://paritytech.github.io/polkadot-sdk/master/frame_support/pallet_macros/index.html>
 #[frame::pallet]
 pub mod pallet {
-	use frame::{prelude::*, runtime::types_common::BlockNumber};
+	use frame::{prelude::*, runtime::types_common::BlockNumber, traits::Header};
 	use polkadot_parachain_primitives::primitives::HeadData;
-	use sp_consensus_grandpa::GrandpaJustification;
+	use sp_consensus_grandpa::Commit;
 
 	#[derive(PartialEq, Eq, Clone, Encode, Decode, TypeInfo, RuntimeDebug)]
 	pub struct PersistedValidationData<H = H256, N = BlockNumber> {
@@ -108,10 +108,17 @@ pub mod pallet {
 		// pub horizontal_messages: BTreeMap<ParaId, Vec<InboundHrmpMessage>>,
 	}
 
+	#[derive(Clone, Encode, Decode, RuntimeDebug, PartialEq, Eq, TypeInfo)]
+	pub struct GrandpaJustification<H: Header> {
+		pub round: u64,
+		pub commit: Commit<H>,
+		pub votes_ancestries: Vec<H>,
+	}
+
 	#[derive(Encode, Decode, RuntimeDebug, Clone, PartialEq, TypeInfo)]
-	pub struct AliveMessageProof<T: Config> {
+	pub struct AliveMessageProof<H: Header> {
 		pub parachain_inherent_data: ParachainInherentData,
-		pub grandpa_justification: GrandpaJustification<HeaderFor<T>>,
+		pub grandpa_justification: GrandpaJustification<H>,
 	}
 
 	/// Configure the pallet by specifying the parameters and types on which it depends.
@@ -247,7 +254,7 @@ pub mod pallet {
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
 		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().reads_writes(1,1))]
-		pub fn handle_alive_message(origin: OriginFor<T>, proof: AliveMessageProof<T>) -> DispatchResultWithPostInfo {
+		pub fn handle_alive_message(origin: OriginFor<T>, proof: AliveMessageProof<HeaderFor<T>>) -> DispatchResultWithPostInfo {
 			let who = ensure_signed(origin)?;
 
 			// proof.validate(); // call in test -> bs16 scale encoded
