@@ -137,6 +137,7 @@ pub mod pallet {
 	}
 
 	#[pallet::pallet]
+	#[pallet::without_storage_info]
 	pub struct Pallet<T>(_);
 
 	#[derive(
@@ -162,6 +163,10 @@ pub mod pallet {
 	#[pallet::storage]
 	pub type ValidatorSet<T: Config> =
 		StorageMap<_, Blake2_128Concat, T::AccountId, (), ValueQuery>;
+
+	#[pallet::storage]
+	pub type AuthorityList<T: Config> =
+		StorageValue<_, sp_consensus_grandpa::AuthorityList, ValueQuery>;
 
 	/// Pallets use events to inform users when important changes are made.
 	/// <https://paritytech.github.io/polkadot-sdk/master/polkadot_sdk_docs/guides/your_first_pallet/index.html#event-and-error>
@@ -254,10 +259,45 @@ pub mod pallet {
 	impl<T: Config> Pallet<T> {
 		#[pallet::call_index(0)]
 		#[pallet::weight(Weight::from_parts(10_000, 0) + T::DbWeight::get().reads_writes(1,1))]
-		pub fn handle_alive_message(origin: OriginFor<T>, proof: AliveMessageProof<HeaderFor<T>>) -> DispatchResultWithPostInfo {
+		pub fn handle_alive_message(
+			origin: OriginFor<T>,
+			proof: AliveMessageProof<HeaderFor<T>>,
+			set_id: u64,
+		) -> DispatchResultWithPostInfo {
 			let who = ensure_signed(origin)?;
 
 			// proof.validate(); // call in test -> bs16 scale encoded
+
+			let grandpa_justification = proof.grandpa_justification;
+			let grandpa_justification = sp_consensus_grandpa::GrandpaJustification {
+				round: grandpa_justification.round,
+				commit: grandpa_justification.commit,
+				votes_ancestries: grandpa_justification.votes_ancestries,
+			};
+			let grandpa_justification: sc_consensus_grandpa::GrandpaJustification<T::Block> =
+				sc_consensus_grandpa::GrandpaJustification::from(grandpa_justification);
+			log::info!(
+				target: crate::LOG_TARGET,
+				"handle_alive_message: grandpa_justification.target() = {:?}",
+				grandpa_justification.target(),
+			);
+
+			let authorities = AuthorityList::get();
+			match grandpa_justification.verify(set_id, &authorities) {
+				Ok(()) => {
+					log::info!(
+						target: crate::LOG_TARGET,
+						"handle_alive_message: grandpa_justification.verify() is ok",
+					);
+				},
+				Err(err) => {
+					log::info!(
+						target: crate::LOG_TARGET,
+						"handle_alive_message: grandpa_justification.verify() is error {:?}",
+						err,
+					);
+				},
+			}
 
 			let current_block_number = frame_system::Pallet::<T>::block_number();
 
