@@ -6,13 +6,19 @@ on:
       - master
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  workflow_dispatch:
+    inputs:
+      eth_rpc_version:
+        description: "pallet-revive-eth-rpc version (e.g. 0.10.0). Leave empty to use the version baked into the Dockerfile."
+        required: false
+        default: ""
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
-  ETH_RPC_IMAGE_NAME: "docker.io/paritypr/eth-rpc"
+  ETH_RPC_IMAGE_NAME: docker.io/theqfnetwork/eth-rpc
 
 jobs:
   isdraft:
@@ -52,6 +58,8 @@ jobs:
           context: .
           file: ./substrate/frame/revive/rpc/dockerfiles/eth-rpc/Dockerfile
           push: false
+          build-args: |
+            ${{ github.event.inputs.eth_rpc_version != '' && format('ETH_RPC_VERSION={0}', github.event.inputs.eth_rpc_version) || '' }}
           tags: |
             ${{ env.ETH_RPC_IMAGE_NAME }}:${{ env.VERSION }}
 
@@ -69,8 +77,8 @@ jobs:
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.PARITYPR_DOCKERHUB_USERNAME }}
-          password: ${{ secrets.PARITYPR_DOCKERHUB_PASSWORD }}
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build eth-rpc Docker image
         uses: docker/build-push-action@v6
@@ -78,5 +86,7 @@ jobs:
           context: .
           file: ./substrate/frame/revive/rpc/dockerfiles/eth-rpc/Dockerfile
           push: true
+          build-args: |
+            ${{ github.event.inputs.eth_rpc_version != '' && format('ETH_RPC_VERSION={0}', github.event.inputs.eth_rpc_version) || '' }}
           tags: |
             ${{ env.ETH_RPC_IMAGE_NAME }}:${{ env.VERSION }}
